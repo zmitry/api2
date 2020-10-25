@@ -22,8 +22,14 @@ type EchoRequest struct {
 	Text    string `json:"text"`
 }
 
+// EchoResponse
 type EchoResponse struct {
-	Text string `json:"text"`
+	Text string `json:"text"` // 	Text string `json:"text"`
+}
+
+// docs
+type CustomType struct {
+	Hell int
 }
 
 type EchoService interface {
