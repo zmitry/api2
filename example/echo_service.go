@@ -1,15 +1,10 @@
-package main
+package example
 
 import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log"
-	"net/http"
-
-	"github.com/starius/api2"
-	"github.com/starius/api2/example"
 )
 
 type EchoService struct {
@@ -22,7 +17,7 @@ func NewEchoService() *EchoService {
 	}
 }
 
-func (s *EchoService) Hello(ctx context.Context, req *example.HelloRequest) (*example.HelloResponse, error) {
+func (s *EchoService) Hello(ctx context.Context, req *HelloRequest) (*HelloResponse, error) {
 	if req.Key != "secret password" {
 		return nil, fmt.Errorf("bad key")
 	}
@@ -32,23 +27,16 @@ func (s *EchoService) Hello(ctx context.Context, req *example.HelloRequest) (*ex
 	}
 	session := hex.EncodeToString(sessionBytes)
 	s.sessions[session] = true
-	return &example.HelloResponse{
+	return &HelloResponse{
 		Session: session,
 	}, nil
 }
 
-func (s *EchoService) Echo(ctx context.Context, req *example.EchoRequest) (*example.EchoResponse, error) {
+func (s *EchoService) Echo(ctx context.Context, req *EchoRequest) (*EchoResponse, error) {
 	if !s.sessions[req.Session] {
 		return nil, fmt.Errorf("bad session")
 	}
-	return &example.EchoResponse{
+	return &EchoResponse{
 		Text: req.Text,
 	}, nil
-}
-
-func main() {
-	service := NewEchoService()
-	routes := example.GetRoutes(service)
-	api2.BindRoutes(http.DefaultServeMux, routes)
-	log.Fatal(http.ListenAndServe(":8080", nil))
 }

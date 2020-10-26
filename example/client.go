@@ -12,7 +12,7 @@ type Client struct {
 	api2client *api2.Client
 }
 
-var _ EchoService = (*Client)(nil)
+var _ IEchoService = (*Client)(nil)
 
 func NewClient(baseURL string) *Client {
 	routes := GetRoutes(nil)
