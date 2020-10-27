@@ -7,10 +7,9 @@ import {request} from "./utils"
 
 export const api = { 
 example: { 
-	IEcho: {
-		Hello: request<t.example.HelloRequest, t.example.HelloResponse>("POST", "/hello"),
-		Echo: request<t.example.EchoRequest, t.example.EchoResponse>("POST", "/echo"),
-		
+	IEchoService: { 
+			Hello: request<t.example.HelloRequest, t.example.HelloResponse>("POST", "/hello", {"query":["key"]}, {"header":["session"]}), 
+			Echo: request<t.example.EchoRequest, t.example.EchoResponse>("POST", "/echo", {"header":["session"],"json":["text"]}, {"json":["text"]}),
 	},
 },
 }

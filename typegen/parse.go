@@ -1,14 +1,18 @@
 package typegen
 
 import (
+	"fmt"
 	"go/ast"
 	"reflect"
+	"regexp"
 )
 
 type Parser struct {
 	rawTypes   []reflect.Type
 	seen       map[reflect.Type]IType
 	visitOrder []reflect.Type
+	// You can skip field or replace it with another type
+	CustomParse func(arg reflect.Type) (IType, bool)
 }
 
 func NewFromTypes(types ...interface{}) *Parser {
@@ -71,11 +75,29 @@ func (this *Parser) isVisited(t reflect.Type) bool {
 	return this.seen[t] != nil
 }
 
+var re = regexp.MustCompile(`[\n\t\r]+`)
+
+func FormatDoc(str string) string {
+	return re.ReplaceAllString(str, " ")
+}
+
 func (this *Parser) visitType(t reflect.Type) {
-	k := t.Kind()
 	unrefT := indirect(t)
+	k := unrefT.Kind()
+	if unrefT.String() == "flowlib.V1Flow" {
+		fmt.Println("[parser] found", unrefT, this.isVisited(unrefT), unrefT)
+	}
 	if this.isVisited(unrefT) {
 		return
+	}
+	if this.CustomParse != nil {
+		v, skip := this.CustomParse(unrefT)
+		if !skip && v != nil {
+			this.markVisit(unrefT, v)
+			return
+		} else if skip {
+			return
+		}
 	}
 
 	switch {
@@ -89,10 +111,13 @@ func (this *Parser) visitType(t reflect.Type) {
 		// if we parse anonymous struct doc is not available
 		if record.Name != "" {
 			recordDoc, f := getFieldsAst(unrefT)
-			astFields = f
-			record.Doc = recordDoc.Doc
+			if recordDoc != nil {
+				astFields = f
+				record.Doc = FormatDoc(recordDoc.Doc)
+			}
 		}
 		record.T = unrefT
+		this.markVisit(unrefT, record)
 		for i := 0; i < unrefT.NumField(); i++ {
 			var (
 				structField     = unrefT.Field(i)
@@ -103,10 +128,11 @@ func (this *Parser) visitType(t reflect.Type) {
 				Type:  indirect(structFieldType),
 				IsRef: structFieldType != structField.Type,
 			}
-			if record.Name != "" {
-				field.Doc = astFields[i].Comment.Text()
+			if record.Name != "" && astFields != nil && len(astFields) > i {
+				field.Doc = FormatDoc(astFields[i].Comment.Text())
 			}
 			parseResult, err := ParseStructTag(structField.Tag)
+			field.Tag = parseResult
 			panicIf(err)
 			if parseResult.State == Ignored {
 				continue
@@ -117,7 +143,6 @@ func (this *Parser) visitType(t reflect.Type) {
 				record.Fields = append(record.Fields, field)
 				continue
 			}
-			field.Tag = parseResult
 			this.visitType(structFieldType)
 			// if struct type has no name it means it's anonymous so we set field value afterwards
 			if structFieldType.Name() == "" && structFieldType.Kind() == reflect.Struct {
@@ -129,7 +154,6 @@ func (this *Parser) visitType(t reflect.Type) {
 			}
 			record.Fields = append(record.Fields, field)
 		}
-		this.markVisit(unrefT, record)
 	case k == reflect.Map:
 		this.visitType(unrefT.Key())
 		fallthrough
@@ -148,7 +172,9 @@ func (this *Parser) visitType(t reflect.Type) {
 			enum := &EnumDef{}
 			this.markVisit(unrefT, enum)
 			enum.T = unrefT
-			enum.Doc = getDoc(unrefT).Doc
+			if getDoc(unrefT) != nil {
+				enum.Doc = getDoc(unrefT).Doc
+			}
 			enum.Values = getTypedEnumValues(t)
 			enum.Name = unrefT.Name()
 		}

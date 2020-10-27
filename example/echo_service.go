@@ -7,13 +7,35 @@ import (
 	"fmt"
 )
 
-type EchoService struct {
-	sessions map[string]bool
+type EchoRepository struct {
 }
 
-func NewEchoService() *EchoService {
+func NewEchoRepository() *EchoRepository {
+	return &EchoRepository{}
+}
+
+type Result struct {
+	Data string
+}
+
+func (s *EchoRepository) Generate() (*Result, error) {
+	sessionBytes := make([]byte, 16)
+	if _, err := rand.Read(sessionBytes); err != nil {
+		return nil, err
+	}
+	session := hex.EncodeToString(sessionBytes)
+	return &Result{Data: session}, nil
+}
+
+type EchoService struct {
+	sessions map[string]bool
+	repo     *EchoRepository
+}
+
+func NewEchoService(repo *EchoRepository) *EchoService {
 	return &EchoService{
 		sessions: make(map[string]bool),
+		repo:     repo,
 	}
 }
 
@@ -21,14 +43,13 @@ func (s *EchoService) Hello(ctx context.Context, req *HelloRequest) (*HelloRespo
 	if req.Key != "secret password" {
 		return nil, fmt.Errorf("bad key")
 	}
-	sessionBytes := make([]byte, 16)
-	if _, err := rand.Read(sessionBytes); err != nil {
+	session, err := s.repo.Generate()
+	if err != nil {
 		return nil, err
 	}
-	session := hex.EncodeToString(sessionBytes)
-	s.sessions[session] = true
+	s.sessions[session.Data] = true
 	return &HelloResponse{
-		Session: session,
+		Session: session.Data,
 	}, nil
 }
 

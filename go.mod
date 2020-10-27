@@ -4,6 +4,7 @@ go 1.14
 
 require (
 	github.com/go-openapi/spec v0.19.4
+	go.uber.org/fx v1.13.1
 	golang.org/x/net v0.0.0-20200602114024-627f9648deb9
-	golang.org/x/tools v0.0.0-20191030062658-86caa796c7ab
+	golang.org/x/tools v0.0.0-20191114200427-caa0b0f7d508
 )

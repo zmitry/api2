@@ -16,13 +16,12 @@ const GlobalTemplate = `/* eslint-disable */
 {{- range $namespace, $types := .}} 
 export namespace {{$namespace}} {
 {{- range $type := $types}}
-{{if $type.Doc| ne ""}}// {{$type.Doc}}{{end -}}
-export type {{$type.Name}} = {{$type|Serialize}}
-{{- end}}
+{{if $type.Doc| ne ""}}// {{$type.Doc -}}{{end}}
+export type {{$type.Name}} = {{$type|Serialize}}{{end}}
 }{{end}}
 `
 
-const RecordTemplate = `{{ range $field := .Embedded}} {{$field.Name}} & {{end}}{
+const RecordTemplate = `{{ range $field := .Embedded}} {{$field | RefName}} & {{end}}{
 {{- range $field := .Fields}} 
 	{{$field | Row}} {{if $field.Doc| ne ""}}// {{$field.Doc}}{{end}}
 {{- end}}
@@ -70,7 +69,13 @@ func typeToString(t reflect.Type, getTypeName TypeToString, stringifyType TypeTo
 func stringifyCustom(t reflect.Type) string {
 	return ""
 }
-func PrintTsTypes(parser *Parser, w io.Writer) {
+
+type Stringifier = func(t reflect.Type) string
+
+func PrintTsTypes(parser *Parser, w io.Writer, stringify Stringifier) {
+	if stringify == nil {
+		stringify = stringifyCustom
+	}
 	output := make(map[string][]IType)
 
 	for _, m := range parser.visitOrder {
@@ -80,20 +85,28 @@ func PrintTsTypes(parser *Parser, w io.Writer) {
 
 	recordToString := func(r *RecordDef) string {
 		tmpl, err := template.New("content").Funcs(template.FuncMap{
+			"RefName": func(t reflect.Type) string {
+				return parser.GetVisited(t).RefName()
+			},
 			"Row": func(t RecordField) string {
 				keyName := t.Key
+				// fmt.Println("[printer]", t.Tag, t.Type, t)
 				fieldType := t.Tag.FieldType
 				if t.Tag.FieldName != "" {
 					keyName = t.Tag.FieldName
 				}
+				// fmt.Println("[printer]", t.Tag, t.Type, t)
+
 				if t.Type != nil {
 					visited := parser.GetVisited(t.Type)
 					if visited != nil {
 						fieldType = visited.RefName()
 					} else {
+						// fmt.Println("[printer]", t.Tag, t.Type, visited)
 						fieldType = typeToString(t.Type, func(t reflect.Type) string {
+							// fmt.Println("[printer-tostring]", t, parser.GetVisited(t))
 							return parser.GetVisited(t).RefName()
-						}, stringifyCustom)
+						}, stringify)
 					}
 				}
 				optionalText := ""
@@ -115,7 +128,7 @@ func PrintTsTypes(parser *Parser, w io.Writer) {
 		return w.String()
 	}
 
-	tmpl, err := template.New("out").Funcs(template.FuncMap{
+	tmpl, err := template.New("types template").Funcs(template.FuncMap{
 		"Serialize": func(t IType) string {
 			switch v := t.(type) {
 			case *RecordDef:
@@ -132,7 +145,7 @@ func PrintTsTypes(parser *Parser, w io.Writer) {
 			case *TypeDef:
 				return typeToString(v.T, func(t reflect.Type) string {
 					return parser.GetVisited(t).RefName()
-				}, stringifyCustom)
+				}, stringify)
 			}
 			return "1"
 		},

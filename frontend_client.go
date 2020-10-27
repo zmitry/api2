@@ -1,6 +1,7 @@
 package api2
 
 import (
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -27,11 +28,10 @@ export const api = {
 {{$key}}: {
 	{{- range $service, $methods := $services }} 
 	{{$service}}: {
-		{{range  $info := $methods -}} 
-			{{$info.FnInfo.Method}}: request<t.{{.ReqType}}, t.{{.ResType}}>("{{.Method}}", "{{.Path}}"),
-		{{end}}
-	},{{- end}}
-},{{end}}
+		{{- range $info := $methods}} 
+			{{$info.FnInfo.Method}}: request<t.{{.ReqType}}, t.{{.ResType}}>("{{.Method}}", "{{.Path}}", {{.TypeInfoReq}}, {{.TypeInfoRes}}),{{end}}
+	},{{end}}
+},{{- end}}
 }
 `
 
@@ -47,7 +47,7 @@ export function cancelable<T>(p: T, source): T & { cancel: () => void } {
 	promiseAny.then = (res, rej) => cancelable(resolve(res, rej), source);
 	return promiseAny;
 }
-export function request<Req, Res>(method:string, url:string) {
+export function request<Req, Res>(method:string, url:string, requestMapping, responeMapping) {
 	return Object.assign((data: Req)=>{
 		const c = axios.CancelToken.source()
 		return cancelable(axios.request<Res>({ method, url, data, cancelToken: c.token  }).then(el=>el.data), c)
@@ -70,6 +70,23 @@ func panicIf(err error) {
 		panic(err)
 	}
 }
+
+var jsonRawMessageType = reflect.TypeOf((*json.RawMessage)(nil)).Elem()
+var any = interface{}(jsonRawMessageType)
+
+func CustomParse(t reflect.Type) (typegen.IType, bool) {
+	if t == jsonRawMessageType {
+		return nil, true
+	}
+	return nil, false
+}
+
+func SerializeCustom(t reflect.Type) string {
+	if t == jsonRawMessageType {
+		return "any"
+	}
+	return ""
+}
 func GenerateTSClient(options *TsGenConfig) {
 	if options.ClientTemplate == nil {
 		options.ClientTemplate = tsClientTemplate
@@ -80,13 +97,16 @@ func GenerateTSClient(options *TsGenConfig) {
 	panicIf(err)
 
 	parser := typegen.NewParser()
+	parser.CustomParse = CustomParse
+	allRoutes := []Route{}
 	for _, getRoutes := range options.Routes {
 		genValue := reflect.ValueOf(getRoutes)
 		serviceArg := reflect.New(genValue.Type().In(0)).Elem()
 		routesValues := genValue.Call([]reflect.Value{serviceArg})
 		routes := routesValues[0].Interface().([]Route)
-		genRoutes(apiFile, routes, parser)
+		allRoutes = append(allRoutes, routes...)
 	}
+	genRoutes(apiFile, allRoutes, parser)
 	typesFile, err := os.OpenFile(filepath.Join(options.OutDir, "types.ts"), os.O_WRONLY|os.O_CREATE, 0755)
 	panicIf(err)
 	utilsFile, err := os.OpenFile(filepath.Join(options.OutDir, "utils.ts"), os.O_WRONLY|os.O_CREATE, 0755)
@@ -94,19 +114,48 @@ func GenerateTSClient(options *TsGenConfig) {
 	err = tsClientUtilsTemplate.Execute(utilsFile, nil)
 	panicIf(err)
 	parser.ParseRaw(options.Types...)
-	typegen.PrintTsTypes(parser, typesFile)
+	typegen.PrintTsTypes(parser, typesFile, SerializeCustom)
 	panicIf(err)
 
 }
 
+func serializeTypeInfo(t *preparedType) ([]byte, error) {
+	type resStruct struct {
+		Query  []string `json:"query,omitempty"`
+		Header []string `json:"header,omitempty"`
+		Json   []string `json:"json,omitempty"`
+	}
+	res := resStruct{}
+	for _, v := range t.HeaderMapping {
+		res.Header = append(res.Header, v.Key)
+	}
+	for _, v := range t.QueryMapping {
+		res.Query = append(res.Query, v.Key)
+	}
+	for i := 0; i < t.TypeForJson.NumField(); i++ {
+		ft := t.TypeForJson.Field(i)
+		tag, err := typegen.ParseStructTag(ft.Tag)
+		if err != nil {
+			return nil, err
+		}
+		name := ft.Name
+		if tag.FieldName != "" {
+			name = tag.FieldName
+		}
+		res.Json = append(res.Json, name)
+	}
+	return json.Marshal(res)
+}
 func genRoutes(w io.Writer, routes []Route, p *typegen.Parser) {
 	type routeDef struct {
-		Method  string
-		Path    string
-		ReqType interface{}
-		ResType interface{}
-		Handler interface{}
-		FnInfo  FnInfo
+		Method      string
+		Path        string
+		ReqType     interface{}
+		ResType     interface{}
+		Handler     interface{}
+		FnInfo      FnInfo
+		TypeInfoReq string
+		TypeInfoRes string
 	}
 	m := map[string]map[string][]routeDef{}
 	for _, route := range routes {
@@ -122,14 +171,20 @@ func genRoutes(w io.Writer, routes []Route, p *typegen.Parser) {
 		p.Parse(req, response)
 		fnInfo := GetFnInfo(route.Handler)
 		fnInfo.StructName = strings.Replace(fnInfo.StructName, "SubService", "", 1)
-		fnInfo.StructName = strings.Replace(fnInfo.StructName, "Service", "", 1)
+		// fnInfo.StructName = strings.Replace(fnInfo.StructName, "Service", "", 1)
+		TypeInfoReq, err := serializeTypeInfo(prepare(req))
+		panicIf(err)
+		TypeInfoRes, err := serializeTypeInfo(prepare(response))
+		panicIf(err)
 		r := routeDef{
-			ReqType: req.String(),
-			ResType: response.String(),
-			Method:  route.Method,
-			Path:    route.Path,
-			Handler: route.Handler,
-			FnInfo:  fnInfo,
+			ReqType:     req.String(),
+			ResType:     response.String(),
+			Method:      route.Method,
+			Path:        route.Path,
+			Handler:     route.Handler,
+			FnInfo:      fnInfo,
+			TypeInfoReq: string(TypeInfoReq),
+			TypeInfoRes: string(TypeInfoRes),
 		}
 
 		if _, ok := m[fnInfo.PkgName]; !ok {

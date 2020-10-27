@@ -19,6 +19,9 @@ func getDoc(t reflect.Type) *doc.Type {
 
 func getFieldsAst(t reflect.Type) (*doc.Type, []*ast.Field) {
 	docType := getDoc(t)
+	if docType == nil {
+		return nil, nil
+	}
 	switch v := (docType.Decl.Specs[0]).(type) {
 	case *ast.TypeSpec:
 		{

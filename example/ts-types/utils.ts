@@ -10,7 +10,7 @@ export function cancelable<T>(p: T, source): T & { cancel: () => void } {
 	promiseAny.then = (res, rej) => cancelable(resolve(res, rej), source);
 	return promiseAny;
 }
-export function request<Req, Res>(method:string, url:string) {
+export function request<Req, Res>(method:string, url:string, requestMapping, responeMapping) {
 	return Object.assign((data: Req)=>{
 		const c = axios.CancelToken.source()
 		return cancelable(axios.request<Res>({ method, url, data, cancelToken: c.token  }).then(el=>el.data), c)
