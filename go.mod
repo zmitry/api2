@@ -3,6 +3,7 @@ module github.com/starius/api2
 go 1.14
 
 require (
+	github.com/aaronjanse/3mux v1.0.1 // indirect
 	github.com/go-openapi/spec v0.19.4
 	go.uber.org/fx v1.13.1
 	golang.org/x/net v0.0.0-20200602114024-627f9648deb9

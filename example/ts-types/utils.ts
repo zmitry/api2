@@ -10,9 +10,38 @@ export function cancelable<T>(p: T, source): T & { cancel: () => void } {
 	promiseAny.then = (res, rej) => cancelable(resolve(res, rej), source);
 	return promiseAny;
 }
-export function request<Req, Res>(method:string, url:string, requestMapping, responeMapping) {
+type RequestMapping = Record<string, string[]>
+type ResponseMapping = Record<string, string[]>
+
+export function route<Req, Res>(method:string, url:string, requestMapping:RequestMapping, responseMapping:ResponseMapping) {
+	let headersReqSet = new Set(requestMapping.headers)
+	let queryReqSet = new Set(requestMapping.query)
+	let shouldProcess = headersReqSet.size || queryReqSet.size;
 	return Object.assign((data: Req)=>{
 		const c = axios.CancelToken.source()
-		return cancelable(axios.request<Res>({ method, url, data, cancelToken: c.token  }).then(el=>el.data), c)
+		data = {...data};
+		let headers = {} as any
+		let query = {} as any
+		if (data && shouldProcess) {
+			for(let k in data) {
+					if(headersReqSet.has(k)) {
+						headers[k] = data[k]
+						delete data[k];
+					} else if(queryReqSet.has(k)) {
+						query[k] = data[k]
+						delete data[k];
+					}
+				}
+		}
+		let queryAsString = new URLSearchParams(Object.values(query)).toString()
+		return cancelable(axios.request<Res>({ method, url: url + (queryAsString? '?' + queryAsString : '') , data, cancelToken: c.token, headers  }).then(el=>{
+			let res = el.data;
+			for(let k of responseMapping.header) {
+				if(el.headers[k]) {
+					res[k] = el.headers[k]
+				}
+			}
+			return res;
+		}), c)
 	}, {method, url})
 }

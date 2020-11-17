@@ -52,7 +52,6 @@ const (
 type ParseResult struct {
 	FieldName string
 	FieldType string
-	Ignore    bool
 	State     PropertyState
 }
 
@@ -62,16 +61,19 @@ func saveGet(arr []string, i int) string {
 	}
 	return ""
 }
+
+func parseJsonLikeTag(str string) (string, string) {
+	t := strings.Split(str, ",")
+	return saveGet(t, 0), saveGet(t, 1)
+}
 func ParseStructTag(structTag reflect.StructTag) (*ParseResult, error) {
 	result := &ParseResult{}
 	var (
-		jsonTag = strings.Split(structTag.Get("json"), ",")
-		tsTag   = strings.Split(structTag.Get("ts"), ",")
+		jsonTagVal, jsonTagOption = parseJsonLikeTag(structTag.Get("json"))
+		queryTagVal, _            = parseJsonLikeTag(structTag.Get("query"))
+		headerTagVal, _           = parseJsonLikeTag(structTag.Get("header"))
+		tsTagVal, tsTagOptions    = parseJsonLikeTag(structTag.Get("ts"))
 	)
-	jsonTagVal := saveGet(jsonTag, 0)
-	tsTagVal := saveGet(tsTag, 0)
-	jsonTagOption := saveGet(jsonTag, 1)
-	tsTagOptions := saveGet(tsTag, 1)
 
 	if jsonTagVal == "-" || tsTagVal == "-" {
 		result.State = Ignored
@@ -80,6 +82,12 @@ func ParseStructTag(structTag reflect.StructTag) (*ParseResult, error) {
 	if result.State != Ignored {
 		result.FieldName = jsonTagVal
 		result.FieldType = tsTagVal
+		if result.FieldName == "1" {
+			result.FieldName = headerTagVal
+		}
+		if result.FieldName == "1" {
+			result.FieldName = queryTagVal
+		}
 		switch tsTagOptions {
 		case "no-null":
 			result.State = NotNull
