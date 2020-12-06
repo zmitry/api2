@@ -1,4 +1,4 @@
-module github.com/starius/api2
+module github.com/zmitry/api2
 
 go 1.14
 
