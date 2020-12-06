@@ -9,7 +9,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/starius/api2/typegen"
+	"github.com/zmitry/api2/typegen"
 )
 
 type funcer interface {
