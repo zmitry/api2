@@ -22,7 +22,8 @@ type Route struct {
 	// Request and Response are custom structures, unique to this route.
 	Handler interface{}
 
-	// The transport used in this route.
+	// The transport used in this route. If Transport is not set, DefaultTransport
+	// is used.
 	Transport Transport
 }
 
@@ -59,6 +60,7 @@ func validateHandler(handlerType reflect.Type) {
 	if handlerType.In(1).Elem().Kind() != reflect.Struct {
 		panic(fmt.Sprintf("handler's second argument must be a pointer to a struct, got %s", handlerType.In(1)))
 	}
+	validateRequestResponse(handlerType.In(1).Elem(), true)
 
 	if handlerType.NumOut() != 2 {
 		panic(fmt.Sprintf("handler must have 2 results, got %d", handlerType.NumOut()))
@@ -66,8 +68,30 @@ func validateHandler(handlerType reflect.Type) {
 	if handlerType.Out(0).Elem().Kind() != reflect.Struct {
 		panic(fmt.Sprintf("handler's first result must be a pointer to a struct, got %s", handlerType.Out(0)))
 	}
+	validateRequestResponse(handlerType.Out(0).Elem(), false)
 	if handlerType.Out(1) != errorType {
 		panic(fmt.Sprintf("handler's second argument must be error, got %s", handlerType.Out(1)))
+	}
+}
+
+func validateRequestResponse(structType reflect.Type, request bool) {
+	for i := 0; i < structType.NumField(); i++ {
+		field := structType.Field(i)
+		hasJson := field.Tag.Get("json") != ""
+		hasQuery := field.Tag.Get("query") != ""
+		hasHeader := field.Tag.Get("header") != ""
+		sum := 0
+		for _, v := range []bool{hasJson, hasQuery, hasHeader} {
+			if v {
+				sum++
+			}
+		}
+		if sum > 1 {
+			panic(fmt.Sprintf("field %s of struct %s: hasJson=%v, hasQuery=%v, hasHeader=%v, want at most one to be true", field.Name, structType.Name(), hasJson, hasQuery, hasHeader))
+		}
+		if hasQuery && !request {
+			panic(fmt.Sprintf("field %s of struct %s: hasQuery=%v, but query can only be used in requests", field.Name, structType.Name(), hasQuery))
+		}
 	}
 }
 
@@ -79,7 +103,7 @@ type interfaceMethod struct {
 }
 
 func (m *interfaceMethod) Func() interface{} {
-	if m.serviceValue.IsNil() {
+	if m.serviceValue.Kind() == reflect.Interface && m.serviceValue.IsNil() {
 		// Service is nil interface.
 		serviceType := m.serviceValue.Type()
 		method, has := serviceType.MethodByName(m.methodName)
@@ -95,6 +119,9 @@ func (m *interfaceMethod) Func() interface{} {
 
 func (m *interfaceMethod) FuncInfo() (pkgFull, pkgName, structName, method string) {
 	serviceType := m.serviceValue.Type()
+	if serviceType.Kind() == reflect.Ptr {
+		serviceType = serviceType.Elem()
+	}
 	pkgFull = serviceType.PkgPath()
 	pkgName = path.Base(pkgFull)
 	structName = serviceType.Name()
@@ -106,6 +133,9 @@ func Method(servicePtr interface{}, methodName string) interface{} {
 	m := interfaceMethod{
 		serviceValue: reflect.ValueOf(servicePtr).Elem(),
 		methodName:   methodName,
+	}
+	if m.serviceValue.Kind() == reflect.Struct {
+		panic("pass a pointer to an interface or a pointer to a pointer to a struct")
 	}
 	_ = m.Func() // To panic asap.
 	return &m
