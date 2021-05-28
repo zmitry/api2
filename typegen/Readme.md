@@ -13,9 +13,9 @@
 package main
 
 import (
-  "github.com/zmitry/go2ts"
+  "github.com/zmitry/starius/api2/typegen"
    // you can use your own
-  "github.com/zmitry/go2ts/example/types"
+ types "your types"
 )
 
 type Root struct {
